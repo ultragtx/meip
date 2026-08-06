@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Cython build artifacts
+meip/graph/cygraph.c
+*.so
+
+# Data & checkpoints
+datasets/
+checkpoints/
+wandb/
+*.pth.tar
+*.pth
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
