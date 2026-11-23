@@ -105,6 +105,60 @@ scale the dynamic batch size to your GPU memory (the learning rate is scaled by
 To change the architecture, adjust `dim_everywhere`, `n_conv`, or the irreps overrides,
 e.g. `bond_fea_irreps_override="32x0e+16x1o+8x2e"`.
 
+The paper results were obtained with DDP on 2 GPUs with 24 GB of memory each
+(`SCALE_FACTOR=1`).
+
+## Baselines
+
+The `meip_baselines` package contains the baselines compared against MEIP in the
+paper. They consume the same crystal graphs and are trained with the same dataset,
+dynamic batch sampler, and trainer as MEIP; MACE and NequIP get the same linear
+magnetic-moment head so that all models predict E/F/S/M.
+
+| `--model` | Class | Params | Loss weights E:F:S:M |
+|---|---|---|---|
+| `chgnet` | `meip_baselines.CHGNet` | 318K | 1.6:0.4:0.1:0.1 |
+| `mace` | `meip_baselines.MACE` | 346K | 1.9:0.9:0.3:0.15 |
+| `nequip` | `meip_baselines.NequIP` | 326K | 1.8:0.8:0.1:0.1 |
+
+`CHGNet` needs no extra packages. `MACE` and `NequIP` require `mace-torch==0.3.13` and
+`nequip==0.16.1`, whose declared dependency pins conflict with this environment
+(although the code runs fine). Install them with the setup script, which installs in
+two rounds and then restores the pinned versions:
+
+```bash
+WITH_BASELINES=1 bash setup_env.sh
+```
+
+Train a baseline with the paper configuration (see `BASELINE_PRESETS` in
+`scripts/train_config.py`):
+
+```bash
+torchrun --nproc_per_node=<num_gpus> scripts/train.py --model nequip
+```
+
+Load trained baseline weights with the matching class:
+
+```python
+from meip_baselines import NequIP
+
+model = NequIP.load("path/to/nequip.pth.tar")
+prediction = model.predict_structure(structure)
+```
+
+Baseline models also work with `StructOptimizer`, `MolecularDynamics`, and
+`MEIPCalculator` (pass the model instance).
+
+## Checkpoint conversion
+
+`tools/convert_checkpoint.py` turns a training checkpoint into a slim release
+checkpoint (model arguments and weights only, without optimizer state or logging
+metadata):
+
+```bash
+python tools/convert_checkpoint.py checkpoints/<run>/epoch29_*.pth.tar meip.pth.tar
+```
+
 ## Repository layout
 
 ```
@@ -115,8 +169,9 @@ meip/
 │   ├── data/         # JSONL streaming dataset, dynamic batch samplers, augmentation
 │   ├── trainer/      # DDP trainer with multi-task (E/F/S/M) losses
 │   └── utils/        # common utilities
+├── meip_baselines/   # CHGNet, MACE, and NequIP baselines
 ├── scripts/          # training entry point and configuration
-├── tools/            # dataset preparation
+├── tools/            # dataset preparation, checkpoint conversion
 ├── examples/         # minimal usage examples
 └── tests/            # smoke tests
 ```

@@ -3,6 +3,7 @@
 Launch with torchrun, e.g.:
 
     torchrun --nproc_per_node=4 scripts/train.py
+    torchrun --nproc_per_node=4 scripts/train.py --model nequip   # a paper baseline
 
 The dataset directory (``TrainConfig.dataset_path``) must contain
 ``train.jsonl``, ``val.jsonl``, and ``test.jsonl`` produced by the tools in
@@ -19,7 +20,6 @@ from torch.distributed import destroy_process_group, init_process_group
 
 from meip.data.dataset_jsonl import StructureJsonlDataset
 from meip.graph.converter import CrystalGraphConverter
-from meip.model import MEIP
 from meip.trainer.ddp_trainer import DDPTrainer
 
 from train_config import TrainConfig
@@ -56,7 +56,7 @@ def make_dataloader(dataset, config: TrainConfig, world_size: int, rank: int, *,
     )
 
 
-def train(rank: int, world_size: int, load_ckpt: str | None = None) -> None:
+def train(rank: int, world_size: int, model_name: str = "meip", load_ckpt: str | None = None) -> None:
     # Reduce file-descriptor pressure from DataLoader workers
     try:
         mp.set_sharing_strategy("file_system")
@@ -65,7 +65,8 @@ def train(rank: int, world_size: int, load_ckpt: str | None = None) -> None:
 
     setup(rank, world_size)
 
-    config = TrainConfig()
+    config = TrainConfig(model=model_name)
+    model_class = config.model_class()
 
     graph_converter = CrystalGraphConverter(
         algorithm=config.algorithm,
@@ -92,12 +93,12 @@ def train(rank: int, world_size: int, load_ckpt: str | None = None) -> None:
     test_loader = make_dataloader(datasets["test"], config, world_size, rank, shuffle=False)
 
     timestamp_str = time.strftime("%Y%m%d-%H%M", time.localtime())
-    save_dir = f"checkpoints/meip_{timestamp_str}"
+    save_dir = f"checkpoints/{config.model}_{timestamp_str}"
     if rank == 0:
         print(f"Saving model to {save_dir}")
 
     if not load_ckpt:
-        model = MEIP(**config.model_kwargs())
+        model = model_class(**config.model_kwargs())
 
         trainer = DDPTrainer(
             model=model,
@@ -122,14 +123,14 @@ def train(rank: int, world_size: int, load_ckpt: str | None = None) -> None:
             learning_rate=1e-3 * config.lr_scale,
             torch_seed=config.torch_seed,
             data_seed=config.data_seed,
-            wandb_path=f"meip/{timestamp_str}",
+            wandb_path=f"meip/{config.model}_{timestamp_str}",
         )
     else:
         if rank == 0:
             print(f"Loading checkpoint from {load_ckpt}")
         trainer = DDPTrainer.load(
             path=load_ckpt,
-            model_class=MEIP,
+            model_class=model_class,
             rank=rank,
             local_rank=rank,
             world_size=world_size,
@@ -154,10 +155,16 @@ def train(rank: int, world_size: int, load_ckpt: str | None = None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MEIP DDP training entry")
+    parser.add_argument(
+        "--model",
+        default="meip",
+        choices=["meip", "chgnet", "mace", "nequip"],
+        help="Model to train: MEIP (default) or one of the paper baselines",
+    )
     parser.add_argument("--load-ckpt", type=str, default=None, help="Path to a checkpoint to resume from")
     args = parser.parse_args()
 
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
 
-    train(rank, world_size, args.load_ckpt)
+    train(rank, world_size, args.model, args.load_ckpt)

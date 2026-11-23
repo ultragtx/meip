@@ -9,6 +9,7 @@
 #   PYTHON=/path/to/python bash setup_env.sh     # defaults to `python`
 #   SKIP_CUDA=1 bash setup_env.sh                # CPU-only (auto-detected on macOS)
 #   WITH_CUEQ=1 bash setup_env.sh                # also install cuequivariance kernels
+#   WITH_BASELINES=1 bash setup_env.sh           # also install MACE/NequIP baselines
 
 set -euo pipefail
 
@@ -16,6 +17,9 @@ PYTHON=${PYTHON:-python}
 PIP="$PYTHON -m pip"
 
 TORCH_VERSION=2.8.0
+E3NN_VERSION=0.5.6
+MACE_VERSION=0.3.13
+NEQUIP_VERSION=0.16.1
 CUEQ_VERSION=0.4.0
 
 # Install CUDA builds unless disabled or running on macOS
@@ -49,6 +53,24 @@ fi
 
 # Training logging
 $PIP install wandb
+
+# Baselines (meip_baselines.MACE / meip_baselines.NequIP). mace-torch and nequip
+# declare pins that conflict with this environment (e.g. mace-torch requires
+# e3nn==0.4.4, nequip pulls matscipy which requires numpy<2), although the code
+# runs fine with the versions below. They cannot be resolved in a single pip call
+# (mace-torch pins e3nn==0.4.4, nequip needs e3nn>=0.5.6), so install them one at a
+# time with their dependencies, then restore the pinned versions. pip reports the
+# remaining declared conflicts as warnings; they can be ignored.
+if [[ "${WITH_BASELINES:-0}" == "1" ]]; then
+    $PIP install "mace-torch==${MACE_VERSION}"
+    $PIP install "nequip==${NEQUIP_VERSION}"
+    if [[ $CUDA == 1 ]]; then
+        $PIP install "torch==${TORCH_VERSION}" --index-url https://download.pytorch.org/whl/cu128
+    else
+        $PIP install "torch==${TORCH_VERSION}"
+    fi
+    $PIP install "e3nn==${E3NN_VERSION}" "numpy==2.2.4" "scipy==1.15.2" "ase==3.24.0"
+fi
 
 # ---- 4. Verify ----
 echo "== Verifying imports and versions..."
@@ -84,6 +106,20 @@ model = MEIP(
 )
 assert model.n_params == 327_326, f"unexpected parameter count: {model.n_params:,}"
 print(f"  MEIP paper-default model: {model.n_params:,} parameters (expected 327,326)")
+
+import os
+if os.environ.get("WITH_BASELINES") == "1":
+    import io, contextlib, sys
+    sys.path.insert(0, "scripts")
+    from train_config import TrainConfig
+    expected = {"chgnet": 317_879, "mace": 346_032, "nequip": 326_061}
+    for name, n_expected in expected.items():
+        cfg = TrainConfig(model=name)
+        with contextlib.redirect_stdout(io.StringIO()):
+            bl = cfg.model_class()(**cfg.model_kwargs())
+        n = sum(p.numel() for p in bl.parameters() if p.requires_grad)
+        assert n == n_expected, f"{name}: unexpected parameter count {n:,}"
+        print(f"  baseline {name:<7} {n:,} parameters (expected {n_expected:,})")
 
 if failed:
     raise SystemExit(f"Import checks failed: {failed}")
