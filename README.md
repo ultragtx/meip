@@ -32,9 +32,9 @@ subset of MPtrj.
 pip install -e .
 ```
 
-Requires Python ≥ 3.10, PyTorch ≥ 2.4, and e3nn ≥ 0.5.1. The optional Cython graph
-converter (`algorithm="fast"`) is compiled automatically during installation; the pure
-Python converter (`algorithm="legacy"`) is always available.
+Requires Python ≥ 3.10, PyTorch ≥ 2.4, and e3nn ≥ 0.5.1. MEIP uses the pure Python
+graph converter (`algorithm="legacy"`), which builds the directed bond graph required by
+the model.
 
 ## Quick start
 
@@ -86,7 +86,9 @@ python tools/prepare_dataset.py clean \
 This reproduces the curation described in the paper: frames containing at least one
 d-block transition metal (Sc–Zn, Y–Cd, Hf–Hg) with non-null magnetic-moment labels,
 isolated-atom configurations removed, split 80:10:10 by `mp_id` to prevent leakage
-between splits.
+between splits. The `clean` step also writes a `<split>.jsonl.sizes` file next to each
+split, caching per-structure graph sizes; the dynamic batch sampler used for training
+requires these files.
 
 ### 2. Launch training
 

@@ -27,7 +27,10 @@ import os
 import jsonlines
 
 from meip.data.dataset_jsonl import StructureJsonlDataset
-from meip.data.dataset_utils import save_to_jsonl_with_graph_filter
+from meip.data.dataset_utils import (
+    compute_and_save_graph_sizes,
+    save_to_jsonl_with_graph_filter,
+)
 from meip.graph.converter import CrystalGraphConverter
 
 # d-block metals of groups 3--12: 3d (Sc--Zn), 4d (Y--Cd), and 5d (Hf--Hg)
@@ -76,10 +79,17 @@ def clean(input_dir: str, output_dir: str) -> None:
             shuffle=False,
             apply_filter=False,
         )
-        save_to_jsonl_with_graph_filter(
-            dataset=dataset,
-            output_path=os.path.join(output_dir, f"{split_name}.jsonl"),
+        output_path = os.path.join(output_dir, f"{split_name}.jsonl")
+        save_to_jsonl_with_graph_filter(dataset=dataset, output_path=output_path)
+
+        # Cache graph sizes (<split>.jsonl.sizes) required by the dynamic batch sampler
+        cleaned = StructureJsonlDataset(
+            output_path,
+            CrystalGraphConverter(algorithm="legacy", enable_dihedral=False),
+            shuffle=False,
+            apply_filter=False,
         )
+        compute_and_save_graph_sizes(dataset=cleaned)
     print(f"Cleaned dataset written to {output_dir}")
 
 

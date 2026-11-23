@@ -37,7 +37,7 @@ class TrainConfig:
     enable_composition_model_train: bool = False
 
     # Graph construction
-    algorithm: str = "legacy"  # "legacy" or "fast"
+    algorithm: str = "legacy"
     enable_dihedral: bool = False
     enable_directed_bond_graph: bool = True
     atom_graph_cutoff: float = 6
@@ -72,7 +72,8 @@ class TrainConfig:
     optimizer: str = "Adam"  # Adam, AdamW, SGD
     scheduler: str = "CosLR"  # CosLR, BypassLR
     weight_decay: float = 0
-    scheduler_params: Optional[dict] = None
+    # CosLR decays to eta_min = decay_fraction * initial learning rate
+    scheduler_params: dict = field(default_factory=lambda: {"decay_fraction": 0.5e-2})
 
     # Multi-task loss weights
     loss_type: str = "static"
